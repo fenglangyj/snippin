@@ -1,0 +1,222 @@
+name: CI
+
+# T-19 工程化门禁：PR / main 推送触发 ruff + pytest 矩阵 + exe 打包核查。
+# 约束：本文件与仓库内任何 workflow 都不得出现密钥值。
+# 需要密钥的步骤一律用「secrets 未配置则跳过」的守卫写法，命名先与项目经理确认。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 与 pyproject [project.optional-dependencies].dev 保持一致；
+  # 显式上界是为了防止 ruff 升级带来的默认规则漂移（门禁必须可复现）。
+  RUFF_SPEC: ruff>=0.17,<0.18
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_PYTHON_VERSION_WARNING: "1"
+
+jobs:
+  # ── 必需作业（失败即拦截合并）──────────────────────────────
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装 ruff
+        run: python -m pip install "$RUFF_SPEC"
+
+      - name: ruff check（门禁）
+        run: python -m ruff check src tests packaging
+
+      - name: ruff format --check（建议项，不阻塞）
+        # 存量代码尚未全量格式化；待 T-11/T-13 收敛后删掉 continue-on-error 变为门禁。
+        continue-on-error: true
+        run: python -m ruff format --check src tests packaging
+
+  test:
+    name: test (py${{ matrix.python-version }})
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        # 产品目标平台是 Windows（见 docs/RISKS.md R-03），门禁矩阵跑在 windows-latest：
+        # Qt / 热键 / 打包行为与用户环境一致，无需 offscreen 变通。
+        os: [windows-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 安装依赖
+        run: python -m pip install -e ".[dev]"
+
+      - name: pytest
+        run: python -m pytest -q --junitxml=junit-${{ matrix.python-version }}.xml
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-py${{ matrix.python-version }}
+          path: junit-*.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
+  build:
+    name: build-exe (${{ matrix.mode }})
+    # 只依赖 lint：与测试并行，让 QA 尽早拿到 PR 构建物做 T-12 手动矩阵。
+    # 测试失败依然由 ci-gate 拦截合并。
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: onefile
+          # onedir 形态同时产出：R-04 杀软误报的首选缓解手段
+          # （onefile 会向临时目录自解压，行为更接近恶意样本）。
+          - mode: onedir
+    timeout-minutes: 30
+    env:
+      SNIPPIN_PKG_MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 安装依赖
+        run: python -m pip install -e ".[dev]"
+
+      - name: PyInstaller 打包
+        run: python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/snippin.spec
+
+      - name: 体积核查（OCR 零增量的回归防线）
+        run: python packaging/check_size.py --mode ${{ matrix.mode }} --report
+
+      - name: 上传可执行产物（供 T-12 手动矩阵取包）
+        uses: actions/upload-artifact@v4
+        with:
+          name: snippin-${{ matrix.mode }}-${{ github.sha }}
+          path: |
+            dist/snippin.exe
+            dist/snippin/
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ── 建议作业（只呈现结论，不拦截合并）──────────────────────
+  # 与必需作业隔离，避免矩阵列的 continue-on-error 语义歧义传导到门禁。
+  smoke-linux:
+    name: smoke-linux (advisory)
+    needs: lint
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Qt 运行所需系统库
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 fonts-dejavu-core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 安装依赖
+        run: python -m pip install -e ".[dev]"
+
+      - name: pytest（离屏）
+        run: python -m pytest -q --junitxml=junit-linux.xml
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-ubuntu
+          path: junit-*.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
+  hygiene:
+    name: hygiene (advisory)
+    runs-on: ubuntu-latest
+    # 密钥/依赖结论需 T-20 负责人裁定是否升级为门禁，先作为建议项呈现。
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 密钥扫描（detect-secrets）
+        run: |
+          python -m pip install detect-secrets
+          detect-secrets scan --all-files > /tmp/secrets.json
+          python -c "
+          import json
+          data = json.load(open('/tmp/secrets.json'))
+          hits = {k: v for k, v in data.get('results', {}).items() if v}
+          for path, items in hits.items():
+              for it in items:
+                  print('::warning file=%s::疑似密钥 %s (line %s)' % (path, it['type'], it['line_number']))
+          print('密钥扫描：%%d 个文件疑似命中' % len(hits))
+          "
+
+      - name: 依赖漏洞审计（pip-audit）
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt --desc on || true
+
+  ci-gate:
+    # 分支保护只需把这一条设为必需检查（见 docs/BRANCH_PROTECTION.md），
+    # 避免逐个配置矩阵列名。
+    name: ci-gate
+    needs: [lint, test, build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 汇总门禁结果
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          echo "lint=$LINT test=$TEST build=$BUILD"
+          if [ "$LINT" != "success" ] || [ "$TEST" != "success" ] || [ "$BUILD" != "success" ]; then
+            echo "::error::CI 门禁未通过（必需作业失败或被取消）。advisory 作业（smoke-linux、hygiene）不影响本结果。"
+            exit 1
+          fi
+          echo "CI 门禁通过。"

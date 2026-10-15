@@ -12,7 +12,14 @@ venv/
 
 # 打包产物
 build/
+build_onedir/
 dist/
+out/
+
+# CI 临时产物
+junit*.xml
+CHANGELOG.md
+.secrets-baseline.bak
 
 # IDE / 系统
 .idea/
@@ -20,3 +27,6 @@ dist/
 *.user
 .DS_Store
 Thumbs.db
+
+# 本地助手会话数据（含本机路径与个人记忆，公开仓库不得提交）
+.qoder/

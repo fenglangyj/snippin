@@ -18,7 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "ruff>=0.6",
+    "ruff>=0.17,<0.18",
     "pyinstaller>=6.0",
 ]
 
@@ -30,3 +30,17 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 120
+target-version = "py310"
+src = ["src", "tests", "packaging"]
+
+[tool.ruff.lint]
+# 必须显式声明 select：ruff 0.17 起默认规则集扩张（新增了 I001/BLE001/SIM102 等），
+# 不写清规则集的话，CI 结论会随 ruff 小版本漂移，门禁就失去可复现性。
+# 现有基线（HEAD）在这组规则下为零告警。
+# 扩展规则集属于代码质量决策：由 BE/QA 在 PR 中提出并同步 CONTRIBUTING.md，
+# DevOps 不单方面加严。
+select = ["E4", "E7", "E9", "F", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# 打包入口与 spec 允许为 PyInstaller 注入的全局名做妥协。
+"packaging/snippin.spec" = ["F821"]

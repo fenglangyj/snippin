@@ -1,0 +1,74 @@
+name: 缺陷报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。填写要点：**可复现** 比 **描述详细** 更重要。
+        涉及截图内容时请**不要**上传含隐私信息的原图，可用示意描述。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 现象 + 期望结果。有报错请贴原文（含弹框文字），不要只写「打不开」。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: |
+        请按步骤写，能标明「必现 / 偶现（约几次）」更好。
+        例：1) 按 Ctrl+Alt+A  2) 从右下向左上拖拽选区  3) 松开鼠标
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: exe 对应 Release 号（如 v0.1.0）或 git commit 短号
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: |
+        请至少填写：Windows 版本、Python 版本（源码运行时）、显示器数量与各自缩放比（如 100% / 150%）。
+        多屏或 DPI 相关问题务必写清主屏是哪一个。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及模块
+      multiple: true
+      options:
+        - 抓屏 capture
+        - 遮罩/选区 ui.overlay
+        - 标注工具 tools
+        - 贴图 ui.pin
+        - 热键 hotkey
+        - 文字提取 ocr
+        - 翻译 translate
+        - 配置 config
+        - 打包 packaging
+        - CI / 工程化
+        - 文档 docs
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 Issue，确认不是重复问题
+          required: true
+        - label: 我贴出的日志/截图中不包含密钥、token 或个人隐私内容
+          required: true

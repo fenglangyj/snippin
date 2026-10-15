@@ -1,0 +1,9 @@
+# 保留空白 Issue 入口：任务认领、工程协调类 Issue 不属于缺陷/功能/契约三类模板。
+blank_issues_enabled: true
+contact_links:
+  - name: 任务分工与验收标准
+    url: https://github.com/fenglangyj/snippin/blob/main/docs/TASKS.md
+    about: 认领任务、查任务状态和验收标准请看这里，不要新开 Issue 问排期。
+  - name: 风险登记册
+    url: https://github.com/fenglangyj/snippin/blob/main/docs/RISKS.md
+    about: 已知限制（OCR 依赖系统语言包、首版 Windows 优先等）先查这里，避免重复报告。

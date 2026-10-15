@@ -1,0 +1,59 @@
+name: 契约变更提案
+description: 修改 ocr/translate 冻结接口签名前必须走的流程
+title: "[Contract] "
+labels: ["contract", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `src/snippin/ocr/base.py` 与 `src/snippin/translate/base.py` 是**冻结契约**
+        （见 CONTRIBUTING.md「接口契约」）。所有引擎/provider/UI 都按它对接，
+        改动会同时影响 T-21 ~ T-27 多个任务。请先在本 Issue 达成一致，再提 PR。
+
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么现有契约不够用
+      description: 给出一个具体的失败场景（哪个引擎/UI 在什么输入下无法按现有接口实现）。
+    validations:
+      required: true
+
+  - type: textarea
+    id: diff
+    attributes:
+      label: 建议的签名变化
+      description: 贴出改前 / 改后的签名片段（Protocol、dataclass 字段、返回值）。
+    validations:
+      required: true
+
+  - type: textarea
+    id: compat
+    attributes:
+      label: 兼容性影响与迁移方式
+      description: |
+        已注册的实现会怎样？能否用默认值/新增可选参数做到不破坏调用方？
+        若属破坏性变更，列出需要同步修改的文件与任务号。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: 是否影响隐私或体积承诺
+      description: 契约改动若导致必须引入本地模型、或需要把图像送到第三方，属于产品级决策
+      options:
+        - 不影响
+        - 影响隐私声明（数据出本机）
+        - 影响包体积（引入新依赖）
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: approval
+    attributes:
+      label: 确认
+      options:
+        - label: 我已确认这是契约级变更，不是普通实现改动
+          required: true
+        - label: 我已 @ 后端工程师与受影响 UI 任务的负责人
+          required: true
