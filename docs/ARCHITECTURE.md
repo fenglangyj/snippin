@@ -25,7 +25,7 @@
 | --- | --- | --- |
 | `app.py` | 进程入口、QApplication、系统托盘、Controller 调度 | `Controller.start_capture/_on_finished` |
 | `config.py` | 配置与密钥存取（QSettings） | `Config.next_save_path / get_translate_secret` |
-| `hotkey.py` | 后台全局热键（keyboard 库）+ 线程安全信号 | `HotkeyListener` |
+| `hotkey.py` | 后台全局热键（ctypes WH_KEYBOARD_LL 钩子，零第三方依赖）+ 线程安全信号 | `HotkeyListener / parse_hotkey` |
 | `capture/grabber.py` | 多屏拼接抓屏 | `grab_virtual_desktop()` |
 | `ui/overlay.py` | 遮罩层、选区状态机、工具条、标注编辑 | `Overlay` |
 | `ui/pin.py` | 贴图悬浮窗 | `PinWindow` |
@@ -46,7 +46,7 @@
 - **绘制与数据分离**：`Shape` 为纯 dataclass，`draw_shape` 只依赖 QPainter，便于单测与新增工具类型。
 - **契约先行**：OCR 与翻译的 `base.py` 冻结后，后端实现引擎/provider 与前端实现结果面板可并行开发；新增实现只注册不改契约（`registry.py`）。
 - **能力探测而非硬编码**：引擎通过 `available()/unavailable_reason()` 自述可用性，UI 据此给出可读引导（对应 R-09）。
-- **热键降级**：`keyboard` 库不可用时静默降级为托盘菜单触发。
+- **热键降级**：钩子注册失败时写入 `HotkeyListener.error`（可感知，不再静默），仍可经托盘菜单触发截图。keyboard 库因在 Python 3.12 下热键匹配失效已移除（缺陷 D-03）。
 
 ## 4. 隐私与数据处理
 
@@ -68,7 +68,7 @@
 
 - 文字提取依赖 Windows 10+ 与系统 OCR 语言包；缺语言包时功能不可用（有引导提示）。
 - 翻译需要网络，且翻译质量与配额取决于用户所选服务商。
-- Linux/Wayland 下抓屏与全局热键受合成器限制，`keyboard` 库需 root；首版以 Windows 为准。
+- Linux/Wayland 下抓屏受限，全局热键钩子仅 Windows 实现（Linux 需另行接入 X11/Wayland 协议）；首版以 Windows 为准。
 - 选区暂不支持 8 向手柄调整与放大镜（M2/T-13、T-14）。
 - 配置暂以代码默认值 + QSettings 为准，设置面板在 M2（T-15）。
 - 应用图标暂用系统内置图标，正式图标在 T-18 定稿。
