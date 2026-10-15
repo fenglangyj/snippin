@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quicksnip"
+version = "0.1.0"
+description = "轻量、独立的微信风格截图工具（框选 / 标注 / 马赛克 / 贴图），无需运行微信客户端"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["screenshot", "snip", "截屏", "截图"]
+dependencies = [
+    "PySide6>=6.6",
+    "keyboard>=0.13.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+quicksnip = "quicksnip.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
