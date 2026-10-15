@@ -59,7 +59,7 @@ def _register_builtin() -> None:
     """注册内置 provider（T-23 实现具体服务商与密钥配置入口）。"""
     try:
         from . import providers  # noqa: F401
-    except Exception:
+    except Exception:  # noqa: BLE001 —— provider 模块缺失或导入失败时静默跳过
         return
 
 

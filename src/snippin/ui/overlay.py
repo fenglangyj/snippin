@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLineEdit, QToolButton, 
 
 from ..config import Config
 from ..tools import Shape, ShapeType, Tool, draw_shape
+from ..utils.geometry import normalize_rect
 
 _MIN_SELECTION = 10  # 选区最小边长（像素）
 
@@ -14,7 +15,7 @@ class Overlay(QWidget):
     坐标系即虚拟桌面坐标系，与抓屏图像一一对应。
     """
 
-    CANCEL, COPY, SAVE, PIN = range(4)
+    CANCEL, COPY, SAVE, PIN, OCR, TRANSLATE = range(6)
     finished = Signal(int, object, str)  # action, QImage|None, 保存路径（若已保存）
 
     _DIM = QColor(0, 0, 0, 110)
@@ -57,10 +58,14 @@ class Overlay(QWidget):
         p.fillRect(self.rect(), self._DIM)
         if not self._sel.isNull():
             p.drawImage(self._sel, self._base, self._sel)
+            # 标注裁剪到选区内，与输出图像保持一致（拖出选区外的笔画不显示）
+            p.save()
+            p.setClipRect(self._sel)
             for shape in self._shapes:
                 draw_shape(p, shape, self._mosaic)
             if self._current is not None:
                 draw_shape(p, self._current, self._mosaic)
+            p.restore()
             p.setPen(QPen(self._BORDER, 1))
             p.drawRect(self._sel.adjusted(0, 0, -1, -1))
         p.end()
@@ -91,7 +96,7 @@ class Overlay(QWidget):
         pos = event.position().toPoint()
         if not self._editing:
             if not self._sel.isNull():
-                self._sel = QRect(self._anchor, pos).normalized()
+                self._sel = normalize_rect(self._anchor, pos)
                 self.update()
             return
         if self._current is not None:
@@ -106,7 +111,7 @@ class Overlay(QWidget):
             return
         pos = event.position().toPoint()
         if not self._editing:
-            self._sel = QRect(self._anchor, pos).normalized()
+            self._sel = normalize_rect(self._anchor, pos)
             if self._sel.width() >= _MIN_SELECTION and self._sel.height() >= _MIN_SELECTION:
                 self._editing = True
                 self._place_toolbar()
@@ -116,7 +121,7 @@ class Overlay(QWidget):
             return
         if self._current is not None:
             if self._current.type is not ShapeType.PEN:
-                rect = QRect(self._current.points[0], self._current.points[1]).normalized()
+                rect = normalize_rect(self._current.points[0], self._current.points[1])
                 if rect.width() >= 2 and rect.height() >= 2:
                     self._shapes.append(self._current)
             elif len(self._current.points) >= 2:
@@ -154,6 +159,9 @@ class Overlay(QWidget):
             self._tool_buttons[tool] = btn
             lay.addWidget(btn)
         lay.addWidget(self._mk_btn("撤销", lambda checked=False: self._undo()))
+        lay.addSpacing(6)
+        lay.addWidget(self._mk_btn("提取文字", lambda checked=False: self._on_ocr()))
+        lay.addWidget(self._mk_btn("翻译", lambda checked=False: self._on_translate()))
         lay.addSpacing(6)
         lay.addWidget(self._mk_btn("保存", lambda checked=False: self._on_save()))
         lay.addWidget(self._mk_btn("贴图", lambda checked=False: self._on_pin()))
@@ -259,9 +267,8 @@ class Overlay(QWidget):
         default = str(self._cfg.next_save_path())
         path, _ = QFileDialog.getSaveFileName(
             self, "保存截图", default, "PNG 图片 (*.png);;JPEG 图片 (*.jpg)")
-        if path:
-            if image.save(path):
-                self._done(self.SAVE, image, path)
+        if path and image.save(path):
+            self._done(self.SAVE, image, path)
 
     def _on_copy_done(self) -> None:
         image = self._render()
@@ -272,6 +279,16 @@ class Overlay(QWidget):
         image = self._render()
         if image is not None:
             self._done(self.PIN, image, "")
+
+    def _on_ocr(self) -> None:
+        image = self._render()
+        if image is not None:
+            self._done(self.OCR, image, "")
+
+    def _on_translate(self) -> None:
+        image = self._render()
+        if image is not None:
+            self._done(self.TRANSLATE, image, "")
 
     def _cancel(self) -> None:
         self._done(self.CANCEL, None, "")

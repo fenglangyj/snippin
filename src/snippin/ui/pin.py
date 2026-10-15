@@ -9,7 +9,8 @@ class PinWindow(QWidget):
     """贴图窗口：把截取的区域以置顶悬浮窗展示，可拖拽，悬停显示操作条。"""
 
     def __init__(self, image: QImage, cfg: Config) -> None:
-        super().__init__(flags=Qt.WindowType.FramelessWindowHint
+        # QWidget 的窗口标志须作为第二位置参数 f 传入（不接受 flags= 关键字）。
+        super().__init__(None, Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.WindowStaysOnTopHint
                          | Qt.WindowType.Tool)
         self._image = image
