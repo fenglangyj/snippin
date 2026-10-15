@@ -1,0 +1,54 @@
+{
+  "_comment": [
+    "打包体积预算（T-17 增量）。由 packaging/check_size.py 读取，作为 CI/Release 门禁。",
+    "基线形态为 onedir（packaging/snippin.spec 的既有决策），onefile 仅在需要单文件版时启用。",
+    "修改本文件必须在 PR 里说明：增量来自哪个依赖、为什么不能用系统能力替代。",
+    "max_bytes 在实测基线上留约 11% 余量，容忍依赖小版本波动；超出即视为架构承诺被破坏。"
+  ],
+  "_measured": {
+    "date": "2026-10-15",
+    "toolchain": "Python 3.12.10 / PySide6 6.12.0 / PyInstaller 6.22.3",
+    "spec": "packaging/snippin.spec（onedir，含 DLL 裁剪增量）",
+    "before_prune_bytes": 125748962,
+    "before_prune_note": "119.9 MiB / 213 文件。用现网 spec 实测：仅靠 excludes 排模块时，opengl32sw/Qt6Quick/Qt6Qml/Qt6QmlModels/Qt6Pdf/Qt6VirtualKeyboard 六个 DLL 全部仍在包内，合计 37.1 MiB（31%）。",
+    "after_prune_bytes": 86897042,
+    "after_prune_note": "82.9 MiB / 207 文件（SNIPPIN_PKG_PRUNE=1）。",
+    "caveat": "测量在 T-19/T-17 工作副本的 src 上进行，未含 T-02/T-26 新增的 theme 与 assets；这些资源体量小，11% 余量足以吸收。首次 CI 跑通后如基线偏移，应以 CI 实测值回填本文件而不是放宽余量。"
+  },
+  "onedir": {
+    "path": "dist/snippin/",
+    "baseline_bytes": 86897042,
+    "max_bytes": 96468992
+  },
+  "onefile": {
+    "path": "dist/snippin.exe",
+    "baseline_bytes": 33713665,
+    "max_bytes": 37748736
+  },
+  "forbidden_patterns": [
+    "^tesseract",
+    "^paddle",
+    "^easyocr",
+    "^onnx",
+    "^torch",
+    "^torchvision",
+    "^tensorflow",
+    "^keras",
+    "^transformers",
+    "^cv2",
+    "^ultralytics",
+    ".*\\.traineddata$",
+    ".*\\.onnx$",
+    ".*\\.pt$",
+    ".*\\.safetensors$"
+  ],
+  "watch_patterns": [
+    "^winrt",
+    "^pywinrt",
+    "^windows$",
+    "^windows_",
+    "^PIL",
+    "^pillow",
+    "^numpy"
+  ]
+}

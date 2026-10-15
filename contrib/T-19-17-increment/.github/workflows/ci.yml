@@ -1,0 +1,174 @@
+# PR 与主干推送的质量门槛：静态检查 + 单元测试 + 打包与体积核查。
+# 本工作流的检查结果即各 PR 的「自查依据」，配置为分支保护必需检查后 main 才会被强制拦住。
+# 分支保护只需勾选聚合项 `ci-gate`（见 docs/CI_CD.md「分支保护」）：
+# 矩阵作业名会随列增减而变化，逐个设为必需检查会长期处于待维护状态。
+# 约束：不引用任何 secrets；仅使用默认只读 GITHUB_TOKEN。详见 docs/CI_CD.md。
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 与 release.yml 同源：PyInstaller 行为随版本变化（含杀软误报与包内文件构成），升级走依赖 PR
+  PYINSTALLER_VERSION: "6.22.3"
+
+jobs:
+  lint:
+    name: lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 安装 ruff（锁定版本，保证门槛行为稳定）
+        run: python -m pip install --disable-pip-version-check "ruff==0.17.0"
+
+      # 增量：把 packaging/ 纳入检查范围。体积门禁脚本自身出错会让「有门禁」变成「没有门禁」，
+      # 它必须和被检查的代码同等对待。
+      - name: 静态检查（问题直接标注到 PR 变更行）
+        run: ruff check src tests packaging --output-format=github
+
+  test:
+    name: test (${{ matrix.python-version }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 安装依赖（含 pytest/ruff/pyinstaller）
+        run: python -m pip install -e ".[dev]"
+
+      - name: 运行单元测试
+        run: python -m pytest -q --junitxml=junit-${{ matrix.python-version }}.xml
+
+      # 增量：Windows 上 pytest 崩溃/收集错误时，光看日志很难定位到用例；留一份报告。
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-py${{ matrix.python-version }}
+          path: junit-*.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # ── 增量作业：PR 阶段就把「能出包 + 体积不失控」验证掉 ──────────────────
+  # 现状是打包只在 Release 时构建，体积只做「报告」不做「拦截」：
+  # 一次 easyocr/paddle 之类的提交可以顺利合进 main，直到发版才被发现包大了 80 MiB。
+  # 本作业把体积口径变成 PR 就能看到的硬门槛，同时给 T-12 手动矩阵提供随手可取的构建物。
+  build:
+    name: build-exe (onedir)
+    needs: lint
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 安装依赖（锁定 PyInstaller 版本）
+        run: python -m pip install -e . "pyinstaller==${{ env.PYINSTALLER_VERSION }}"
+
+      - name: 打包（与 release.yml 同一命令，避免「CI 能出包 Release 出不了」）
+        run: python -m PyInstaller --noconfirm --clean packaging\snippin.spec
+
+      - name: 体积核查（上限 + 重量级依赖双闸，结论写入 Job Summary）
+        run: python packaging\check_size.py --mode onedir --report
+
+      - name: 上传构建物（供 T-12 手动矩阵与真机 smoke 取用）
+        uses: actions/upload-artifact@v7
+        with:
+          name: snippin-pr-${{ github.sha }}
+          path: dist/snippin/
+          retention-days: 14
+          if-no-files-found: error
+
+  # ── 建议作业：只呈现结论，不拦截合并 ────────────────────────────────
+  # 与必需作业隔离（不进 ci-gate 的 needs），避免矩阵列的 continue-on-error
+  # 语义歧义传导到门禁结论。
+  hygiene:
+    name: hygiene (advisory)
+    runs-on: ubuntu-latest
+    # 是否升级为门禁由 T-20 发布检查负责人裁定；PR 模板要求「advisory 失败需在 PR 里回应」。
+    continue-on-error: true
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: 密钥扫描（detect-secrets）
+        run: |
+          python -m pip install detect-secrets
+          detect-secrets scan --all-files > /tmp/secrets.json
+          python -c "
+          import json
+          data = json.load(open('/tmp/secrets.json'))
+          hits = {k: v for k, v in data.get('results', {}).items() if v}
+          for path, items in hits.items():
+              for it in items:
+                  print('::warning file=%s::疑似密钥 %s (line %s)' % (path, it['type'], it['line_number']))
+          print('密钥扫描：%d 个文件疑似命中' % len(hits))
+          "
+
+      - name: 依赖漏洞审计（pip-audit）
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt --desc on || true
+
+  # 分支保护只勾这一条：必需作业的聚合结论。
+  ci-gate:
+    name: ci-gate
+    needs: [lint, test, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 汇总门禁结果
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          echo "lint=$LINT test=$TEST build-exe=$BUILD"
+          if [ "$LINT" != "success" ] || [ "$TEST" != "success" ] || [ "$BUILD" != "success" ]; then
+            echo "::error::CI 门禁未通过（必需作业失败或被取消）。advisory 作业（hygiene）不影响本结果。"
+            exit 1
+          fi
+          echo "CI 门禁通过。"
