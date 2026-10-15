@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "打包体积预算（T-17）。由 packaging/check_size.py 读取并作为 CI 门禁。",
+    "修改本文件必须在 PR 里说明：增量来自哪个依赖、为什么不能用系统能力替代。",
+    "baseline_bytes 为实测值，max_bytes 留出约 11% 余量用于依赖小版本波动。"
+  ],
+  "_measured": {
+    "date": "2026-10-15",
+    "python": "3.12.10",
+    "pyinstaller": "6.22.3",
+    "pyside6": "6.12.0",
+    "prune": "SNIPPIN_PKG_PRUNE=1（裁掉 opengl32sw/Qt6Quick/Qt6Qml/Qt6QmlModels/Qt6Pdf/Qt6VirtualKeyboard）",
+    "before_prune": "onefile 47.4 MiB / onedir 119.9 MiB",
+    "after_prune": "onefile 32.2 MiB / onedir 82.9 MiB"
+  },
+  "onefile": {
+    "path": "dist/snippin.exe",
+    "baseline_bytes": 33713665,
+    "max_bytes": 37748736
+  },
+  "onedir": {
+    "path": "dist/snippin/",
+    "baseline_bytes": 86897042,
+    "max_bytes": 96468992
+  },
+  "forbidden_patterns": [
+    "^tesseract",
+    "^paddle",
+    "^easyocr",
+    "^onnx",
+    "^torch",
+    "^torchvision",
+    "^tensorflow",
+    "^keras",
+    "^transformers",
+    "^cv2",
+    "^ultralytics",
+    ".*\\.traineddata$",
+    ".*\\.onnx$",
+    ".*\\.pt$",
+    ".*\\.safetensors$"
+  ],
+  "watch_patterns": [
+    "^winrt",
+    "^pywinrt",
+    "^windows$",
+    "^windows_",
+    "^PIL",
+    "^pillow",
+    "^numpy"
+  ]
+}

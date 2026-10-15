@@ -1,0 +1,186 @@
+name: Release
+
+# T-17 发布流水线：打 tag -> 校验版本一致性 -> 出包 -> 体积核查 -> 校验和 -> GitHub Release。
+# 密钥约束：本文件不出现任何密钥值。签名相关 secrets 仅以「名字」引用，
+# 未配置时整步跳过；接入签名服务商前需项目经理批准（见 docs/RELEASE.md）。
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要重新发布的既有 tag（必填，如 v0.1.0）
+        required: true
+        default: ""
+
+# 默认最小权限；仅 release 作业显式申请 contents: write。
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  preflight:
+    name: preflight (版本一致性)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 校验 tag 与 pyproject 版本一致
+        run: |
+          python - <<'PY'
+          import re, subprocess, sys, tomllib, pathlib
+          tag = subprocess.check_output(["git", "describe", "--tags", "--exact-match"], text=True).strip()
+          ver = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          expect = f"v{ver}"
+          if tag != expect:
+              print(f"::error::tag {tag} 与 pyproject version {expect} 不一致。"
+                    "发布规则：先改 pyproject 版本号并合入 main，再打 tag。")
+              sys.exit(1)
+          if not re.fullmatch(r"v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?", tag):
+              print(f"::error::tag {tag} 不符合 vX.Y.Z[-pre] 规则")
+              sys.exit(1)
+          print(f"版本一致：{tag}")
+          PY
+
+      - name: 确认 main 分支已包含该提交
+        run: |
+          if ! git branch -r --contains HEAD | grep -q "origin/main"; then
+            echo "::error::待发布提交不在 origin/main 上。发布只能来自 main。"
+            exit 1
+          fi
+
+  build:
+    name: build (${{ matrix.mode }})
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [onefile, onedir]
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      SNIPPIN_PKG_MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: 安装依赖
+        run: python -m pip install -e ".[dev]"
+
+      - name: 门禁自检（与 PR 同一套标准）
+        run: |
+          python -m ruff check src tests packaging
+          python -m pytest -q
+
+      - name: PyInstaller 打包
+        run: python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/snippin.spec
+
+      - name: 体积核查
+        run: python packaging/check_size.py --mode ${{ matrix.mode }} --report
+
+      - name: 归档产物
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          if ("${{ matrix.mode }}" -eq "onefile") {
+            Copy-Item dist/snippin.exe "out/snippin-$tag.exe"
+          } else {
+            Compress-Archive -Path dist/snippin/* -DestinationPath "out/snippin-$tag-win-x64.zip" -Force
+          }
+          Get-ChildItem out | ForEach-Object {
+            $h = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            "$($_.Name)  $h" | Tee-Object -FilePath out/SHA256SUMS.txt -Append
+          }
+
+      - name: 代码签名（未配置 secrets 时整步跳过）
+        shell: pwsh
+        env:
+          SIGNPATH_PROJECT: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          if (-not $env:SIGNPATH_PROJECT -or -not $env:SIGNPATH_TOKEN) {
+            Write-Host "::notice::未配置代码签名（secrets 为空），本步跳过。"
+            Write-Host "签名方案与启用步骤见 docs/RELEASE.md「代码签名」。"
+            exit 0
+          }
+          Write-Host "::error::已配置签名 secrets 但流水线尚未接入签名动作，请按 docs/RELEASE.md 由 DevOps + PM 共同启用。"
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.mode }}
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: out
+          merge-multiple: true
+
+      - name: 生成 changelog
+        id: notes
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || echo "")"
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+          python packaging/gen_changelog.py --tag "$tag" --from "$prev" --out CHANGELOG.md
+          cat CHANGELOG.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 创建或更新 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          ls -la out/
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+            gh release edit "$TAG" --notes-file CHANGELOG.md
+          else
+            gh release create "$TAG" --target "$(git rev-parse "$TAG")" \
+              --title "$TAG" --notes-file CHANGELOG.md --latest=true out/*
+          fi
+          echo "### 已发布 $TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "下载页：$(gh release view "$TAG" --json url -q .url)" >> "$GITHUB_STEP_SUMMARY"
