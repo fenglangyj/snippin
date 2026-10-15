@@ -51,14 +51,14 @@ class Controller(QObject):
 
     def _notify(self, message: str) -> None:
         if self.tray is not None and QSystemTrayIcon.isSystemTrayAvailable():
-            self.tray.showMessage("quicksnip", message,
+            self.tray.showMessage("snippin", message,
                                   QSystemTrayIcon.MessageIcon.Information, 2000)
 
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("quicksnip")
-    app.setApplicationDisplayName("quicksnip")
+    app.setApplicationName("snippin")
+    app.setApplicationDisplayName("snippin")
     app.setQuitOnLastWindowClosed(False)
 
     cfg = Config()
@@ -74,7 +74,7 @@ def main() -> int:
     act_quit = menu.addAction("退出")
     act_quit.triggered.connect(app.quit)
     tray.setContextMenu(menu)
-    tray.setToolTip("quicksnip - 轻量截图工具")
+    tray.setToolTip("snippin - 轻量截图工具")
     controller.tray = tray
     tray.show()
 

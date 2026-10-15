@@ -1,6 +1,6 @@
 from PySide6.QtCore import QPoint, QPointF
 
-from quicksnip.utils.geometry import arrow_head, normalize_rect
+from snippin.utils.geometry import arrow_head, normalize_rect
 
 
 def test_normalize_rect_swapped_corners():

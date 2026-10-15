@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "quicksnip"
+name = "snippin"
 version = "0.1.0"
 description = "轻量、独立的微信风格截图工具（框选 / 标注 / 马赛克 / 贴图），无需运行微信客户端"
 readme = "README.md"
@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-quicksnip = "quicksnip.app:main"
+snippin = "snippin.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

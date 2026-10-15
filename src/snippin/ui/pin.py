@@ -15,7 +15,7 @@ class PinWindow(QWidget):
         self._image = image
         self._cfg = cfg
         self._drag_offset: QPoint | None = None
-        self.setWindowTitle("quicksnip 贴图")
+        self.setWindowTitle("snippin 贴图")
         self.resize(max(image.width(), 120), max(image.height(), 80))
 
         self._bar = QWidget(self)
@@ -62,9 +62,9 @@ class PinWindow(QWidget):
     def _save(self) -> None:
         path = self._cfg.next_save_path()
         if self._image.save(str(path)):
-            QMessageBox.information(self, "quicksnip", f"已保存：{path}")
+            QMessageBox.information(self, "snippin", f"已保存：{path}")
         else:
-            QMessageBox.warning(self, "quicksnip", f"保存失败：{path}")
+            QMessageBox.warning(self, "snippin", f"保存失败：{path}")
 
     def _copy(self) -> None:
         QApplication.clipboard().setImage(self._image)

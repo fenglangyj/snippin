@@ -1,6 +1,6 @@
 from PySide6.QtCore import QPoint
 
-from quicksnip.tools import Shape, ShapeType, Tool
+from snippin.tools import Shape, ShapeType, Tool
 
 
 def test_tool_and_shape_names_match():
