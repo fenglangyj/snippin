@@ -56,7 +56,7 @@ def _register_builtin() -> None:
     """注册内置引擎（T-21：Windows 系统 OCR）。模块缺失时静默跳过。"""
     try:
         from .windows import WindowsOcrEngine
-    except Exception:
+    except Exception:  # noqa: BLE001 —— 引擎模块缺失或导入失败时静默跳过，不阻塞应用启动
         return
     register_engine(WindowsOcrEngine.name, WindowsOcrEngine)
 

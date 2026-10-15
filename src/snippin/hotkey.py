@@ -27,7 +27,7 @@ class HotkeyListener(QObject):
 
                 keyboard.add_hotkey(self.hotkey, self._on_hotkey)
                 keyboard.wait()
-            except Exception:
+            except Exception:  # noqa: BLE001 —— 缺库/无权限等任何失败均静默降级
                 # 无权限或库不可用时静默降级：仍可通过托盘菜单触发截图
                 return
 

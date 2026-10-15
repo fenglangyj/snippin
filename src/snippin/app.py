@@ -1,6 +1,6 @@
 import sys
 
-from PySide6.QtCore import QObject, QUrl
+from PySide6.QtCore import QObject, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QMenu, QStyle, QSystemTrayIcon
 
@@ -9,6 +9,7 @@ from .config import Config
 from .hotkey import HotkeyListener
 from .ui.overlay import Overlay
 from .ui.pin import PinWindow
+from .ui.result_panel import OcrPanel, TranslatePanel, run_ocr
 
 
 class Controller(QObject):
@@ -19,6 +20,7 @@ class Controller(QObject):
         self.cfg = cfg
         self.overlay: Overlay | None = None
         self.pins: list[PinWindow] = []
+        self.panels: list = []  # OCR / 翻译结果面板，持有引用防止被回收
         self.tray: QSystemTrayIcon | None = None
 
     def start_capture(self) -> None:
@@ -44,6 +46,30 @@ class Controller(QObject):
             pin = PinWindow(image, self.cfg)
             pin.show()
             self.pins.append(pin)
+        elif action == Overlay.OCR and image is not None:
+            self._open_panel(OcrPanel(image, self.cfg))
+        elif action == Overlay.TRANSLATE and image is not None:
+            source = self._ocr_text_or_empty(image)
+            self._open_panel(TranslatePanel(source, self.cfg))
+
+    def _ocr_text_or_empty(self, image) -> str:
+        """为翻译面板尽力预取 OCR 文本；引擎不可用时返回空串（面板支持手动粘贴）。"""
+        try:
+            return run_ocr(image, self.cfg).text
+        except Exception:  # noqa: BLE001 —— OCR 不可用不阻断翻译面板打开
+            return ""
+
+    def _open_panel(self, panel) -> None:
+        panel.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        panel.destroyed.connect(lambda *_: self._forget_panel(panel))
+        self.panels.append(panel)
+        panel.show()
+        panel.raise_()
+        panel.activateWindow()
+
+    def _forget_panel(self, panel) -> None:
+        if panel in self.panels:
+            self.panels.remove(panel)
 
     def open_save_dir(self) -> None:
         self.cfg.save_dir.mkdir(parents=True, exist_ok=True)
